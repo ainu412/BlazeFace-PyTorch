@@ -91,21 +91,21 @@ class BlazeFace(nn.Module):
         self.num_classes = 1
         self.num_anchors = 896
         self.num_coords = 16
-        self.score_clipping_thresh = 100.0
+        self.score_clipping_thresh = 100
         self.back_model = back_model
         if back_model:
             self.x_scale = 256.0
             self.y_scale = 256.0
             self.h_scale = 256.0
             self.w_scale = 256.0
-            self.min_score_thresh = 0.65
+            self.min_score_thresh = 0.05
         else:
             self.x_scale = 128.0
             self.y_scale = 128.0
             self.h_scale = 128.0
             self.w_scale = 128.0
             self.min_score_thresh = 0.75
-        self.min_suppression_threshold = 0.3
+        self.min_suppression_threshold = 0.01
 
         self._define_layers()
 
@@ -286,23 +286,25 @@ class BlazeFace(nn.Module):
 
         # 1. Preprocess the images into tensors:
         x = x.to(self._device())
-        x = self._preprocess(x)
+        #x = self._preprocess(x)
 
         # 2. Run the neural network:
-        with torch.no_grad():
-            out = self.__call__(x)
+        #with torch.no_grad():
+        out = self.__call__(x)
+        #print("out", out.shape)
 
         # 3. Postprocess the raw predictions:
         detections = self._tensors_to_detections(out[0], out[1], self.anchors)
 
         # 4. Non-maximum suppression to remove overlapping detections:
-        filtered_detections = []
-        for i in range(len(detections)):
-            faces = self._weighted_non_max_suppression(detections[i])
-            faces = torch.stack(faces) if len(faces) > 0 else torch.zeros((0, 17))
-            filtered_detections.append(faces)
+#         filtered_detections = []
+#         for i in range(len(detections)):
+#             faces = self._weighted_non_max_suppression(detections[i])
+#             faces = torch.stack(faces) if len(faces) > 0 else torch.zeros((0, 17))
+#             filtered_detections.append(faces)
+        return detections
 
-        return filtered_detections
+        #return filtered_detections
 
     def _tensors_to_detections(self, raw_box_tensor, raw_score_tensor, anchors):
         """The output of the neural network is a tensor of shape (b, 896, 16)
@@ -326,17 +328,23 @@ class BlazeFace(nn.Module):
         assert raw_score_tensor.shape[2] == self.num_classes
 
         assert raw_box_tensor.shape[0] == raw_score_tensor.shape[0]
-        
+        #print("raw_score_tensor", raw_score_tensor)
+        #print("actual raw score tensor shape", raw_score_tensor.shape)
         detection_boxes = self._decode_boxes(raw_box_tensor, anchors)
         
         thresh = self.score_clipping_thresh
         raw_score_tensor = raw_score_tensor.clamp(-thresh, thresh)
+        #print("actual raw score tensor after clamp", raw_score_tensor.shape)
         detection_scores = raw_score_tensor.sigmoid().squeeze(dim=-1)
+        #print("detection scores after sigmod shape", detection_scores.shape)
+        #print("detection scores after sigmod", detection_scores)
         
         # Note: we stripped off the last dimension from the scores tensor
         # because there is only has one class. Now we can simply use a mask
         # to filter out the boxes with too low confidence.
-        mask = detection_scores >= self.min_score_thresh
+        #mask = detection_scores >= self.min_score_thresh
+        mask = detection_scores >=0.0
+        
 
         # Because each image from the batch can have a different number of
         # detections, process them one at a time using a loop.
