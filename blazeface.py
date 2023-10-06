@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
 
 class BlazeBlock(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size=3, stride=1):
@@ -14,7 +15,7 @@ class BlazeBlock(nn.Module):
         # TFLite uses slightly different padding than PyTorch 
         # on the depthwise conv layer when the stride is 2.
         if stride == 2:
-            self.max_pool = nn.MaxPool2d(kernel_size=stride, stride=stride)
+            self.max_pool = nn.MaxPool2d(kernel_size=stride, stride=stride).to(device)
             padding = 0
         else:
             padding = (kernel_size - 1) // 2
@@ -25,9 +26,9 @@ class BlazeBlock(nn.Module):
                       groups=in_channels, bias=True),
             nn.Conv2d(in_channels=in_channels, out_channels=out_channels, 
                       kernel_size=1, stride=1, padding=0, bias=True),
-        )
+        ).to(device)
 
-        self.act = nn.ReLU(inplace=True)
+        self.act = nn.ReLU(inplace=True).to(device)
 
     def forward(self, x):
         if self.stride == 2:
@@ -52,9 +53,9 @@ class FinalBlazeBlock(nn.Module):
                       groups=channels, bias=True),
             nn.Conv2d(in_channels=channels, out_channels=channels,
                       kernel_size=1, stride=1, padding=0, bias=True),
-        )
+        ).to(device)
 
-        self.act = nn.ReLU(inplace=True)
+        self.act = nn.ReLU(inplace=True).to(device)
 
     def forward(self, x):
         h = F.pad(x, (0, 2, 0, 2), "constant", 0)
@@ -146,13 +147,13 @@ class BlazeFace(nn.Module):
                 BlazeBlock(96, 96),
                 BlazeBlock(96, 96),
                 BlazeBlock(96, 96),
-            )
-            self.final = FinalBlazeBlock(96)
-            self.classifier_8 = nn.Conv2d(96, 2, 1, bias=True)
-            self.classifier_16 = nn.Conv2d(96, 6, 1, bias=True)
+            ).to(device)
+            self.final = FinalBlazeBlock(96).to(self._device())
+            self.classifier_8 = nn.Conv2d(96, 2, 1, bias=True).to(device)
+            self.classifier_16 = nn.Conv2d(96, 6, 1, bias=True).to(device)
 
-            self.regressor_8 = nn.Conv2d(96, 32, 1, bias=True)
-            self.regressor_16 = nn.Conv2d(96, 96, 1, bias=True)
+            self.regressor_8 = nn.Conv2d(96, 32, 1, bias=True).to(device)
+            self.regressor_16 = nn.Conv2d(96, 96, 1, bias=True).to(device)
         else:
             self.backbone1 = nn.Sequential(
                 nn.Conv2d(in_channels=3, out_channels=24, kernel_size=5, stride=2, padding=0, bias=True),
@@ -169,7 +170,7 @@ class BlazeFace(nn.Module):
                 BlazeBlock(64, 72),
                 BlazeBlock(72, 80),
                 BlazeBlock(80, 88),
-            )
+            ).to(device)
 
             self.backbone2 = nn.Sequential(
                 BlazeBlock(88, 96, stride=2),
@@ -177,23 +178,24 @@ class BlazeFace(nn.Module):
                 BlazeBlock(96, 96),
                 BlazeBlock(96, 96),
                 BlazeBlock(96, 96),
-            )
-            self.classifier_8 = nn.Conv2d(88, 2, 1, bias=True)
-            self.classifier_16 = nn.Conv2d(96, 6, 1, bias=True)
+            ).to(device)
+            self.classifier_8 = nn.Conv2d(88, 2, 1, bias=True).to(device)
+            self.classifier_16 = nn.Conv2d(96, 6, 1, bias=True).to(device)
 
-            self.regressor_8 = nn.Conv2d(88, 32, 1, bias=True)
-            self.regressor_16 = nn.Conv2d(96, 96, 1, bias=True)
+            self.regressor_8 = nn.Conv2d(88, 32, 1, bias=True).to(device)
+            self.regressor_16 = nn.Conv2d(96, 96, 1, bias=True).to(device)
 
     def forward(self, x):
         # TFLite uses slightly different padding on the first conv layer
         # than PyTorch, so do it manually.
-        x = F.pad(x, (1, 2, 1, 2), "constant", 0)
+        x = F.pad(x, (1, 2, 1, 2), "constant", 0).to(device)
+
         
         b = x.shape[0]      # batch size, needed for reshaping later
 
         if self.back_model:
-            x = self.backbone(x)           # (b, 16, 16, 96)
-            h = self.final(x)              # (b, 8, 8, 96)
+            x = self.backbone(x).to(device)       # (b, 16, 16, 96)
+            h = self.final(x).to(device)              # (b, 8, 8, 96)
         else:
             x = self.backbone1(x)           # (b, 88, 16, 16)
             h = self.backbone2(x)           # (b, 96, 8, 8)
@@ -224,8 +226,7 @@ class BlazeFace(nn.Module):
 
     def _device(self):
         """Which device (CPU or GPU) is being used by this model?"""
-        return self.classifier_8.weight.device
-    
+        return device
     def load_weights(self, path):
         self.load_state_dict(torch.load(path))
         self.eval()        
