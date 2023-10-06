@@ -380,6 +380,12 @@ class BlazeFace(nn.Module):
             keypoint_y = raw_boxes[..., offset + 1] / self.y_scale * anchors[:, 3] + anchors[:, 1]
             boxes[..., offset    ] = keypoint_x
             boxes[..., offset + 1] = keypoint_y
+        
+        # convert boxes back to xywh format
+        boxes[..., 0] = x_center
+        boxes[..., 1] = y_center
+        boxes[..., 2] = w
+        boxes[..., 3] = h
 
         return boxes
 
